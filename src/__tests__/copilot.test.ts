@@ -56,32 +56,81 @@ test('copilot: system messages become the system instruction', () => {
 });
 
 test('copilot: a tool call and its result become functionCall + functionResponse', () => {
-  const { contents } = convertMessages([
-    message(LanguageModelChatMessageRole.User, [new LanguageModelTextPart('list files')]),
-    message(LanguageModelChatMessageRole.Assistant, [
-      new LanguageModelToolCallPart('call_1', 'listDir', { path: '.' }),
-    ]),
-    // VS Code delivers results on a user turn, keyed only by call id.
-    message(LanguageModelChatMessageRole.User, [
-      new LanguageModelToolResultPart('call_1', [new LanguageModelTextPart('a.txt')]),
-    ]),
-  ]);
+  const { contents } = convertMessages(
+    [
+      message(LanguageModelChatMessageRole.User, [new LanguageModelTextPart('list files')]),
+      message(LanguageModelChatMessageRole.Assistant, [
+        new LanguageModelToolCallPart('call_1', 'listDir', { path: '.' }),
+      ]),
+      // VS Code delivers results on a user turn, keyed only by call id.
+      message(LanguageModelChatMessageRole.User, [
+        new LanguageModelToolResultPart('call_1', [new LanguageModelTextPart('a.txt')]),
+      ]),
+    ],
+    'gemini-3.8-flash-tiered',
+  );
 
   assert.equal(contents[1].role, 'model');
-  // The id has to survive both directions: for the Claude models the upstream
-  // translates these into Anthropic `tool_use` / `tool_result` blocks, and
-  // rejects the whole request when the call carries no id.
+  // Gemini is the only family that gets neither id: Copilot's is not one Gemini
+  // issued, and replaying it fails the request. Name and args still say what to
+  // run.
   assert.deepEqual(contents[1].parts[0].functionCall, {
-    id: 'call_1',
     name: 'listDir',
     args: { path: '.' },
   });
   assert.equal(contents[2].role, 'user');
   assert.deepEqual(contents[2].parts[0].functionResponse, {
+    name: 'listDir',
+    response: { output: 'a.txt' },
+  });
+});
+
+test('copilot: the Claude models keep the call id their format requires', () => {
+  const { contents } = convertMessages(
+    [
+      message(LanguageModelChatMessageRole.User, [new LanguageModelTextPart('list files')]),
+      message(LanguageModelChatMessageRole.Assistant, [
+        new LanguageModelToolCallPart('call_1', 'listDir', { path: '.' }),
+      ]),
+      message(LanguageModelChatMessageRole.User, [
+        new LanguageModelToolResultPart('call_1', [new LanguageModelTextPart('a.txt')]),
+      ]),
+    ],
+    'claude-opus-4-6-thinking',
+  );
+
+  // The upstream answers these as Anthropic `tool_use` / `tool_result` blocks,
+  // and rejects the request when either carries no id, so both keep it.
+  assert.deepEqual(contents[1].parts[0].functionCall, {
+    id: 'call_1',
+    name: 'listDir',
+    args: { path: '.' },
+  });
+  assert.deepEqual(contents[2].parts[0].functionResponse, {
     id: 'call_1',
     name: 'listDir',
     response: { output: 'a.txt' },
   });
+});
+
+test('copilot: a model outside the Gemini family keeps the call id', () => {
+  const { contents } = convertMessages(
+    [
+      message(LanguageModelChatMessageRole.User, [new LanguageModelTextPart('list files')]),
+      message(LanguageModelChatMessageRole.Assistant, [
+        new LanguageModelToolCallPart('call_1', 'listDir', { path: '.' }),
+      ]),
+      message(LanguageModelChatMessageRole.User, [
+        new LanguageModelToolResultPart('call_1', [new LanguageModelTextPart('a.txt')]),
+      ]),
+    ],
+    'gpt-oss-120b-medium',
+  );
+
+  // Only the Gemini models are left without it, so every other family is sent
+  // exactly what it was before this change.
+  assert.equal(contents[1].parts[0].functionCall.id, 'call_1');
+  assert.equal(contents[2].parts[0].functionResponse.id, 'call_1');
 });
 
 test('copilot: consecutive turns with the same speaker are merged', () => {
@@ -168,7 +217,8 @@ test('copilot: a Gemini tool call is replayed with the signature Gemini issued',
     true,
   );
 
-  assert.equal(contents[0].parts[0].functionCall.id, 'call_sig');
+  assert.equal(contents[0].parts[0].functionCall.name, 'listDir');
+  assert.equal(contents[0].parts[0].functionCall.id, undefined);
   assert.equal(contents[0].parts[0].thoughtSignature, 'signature-from-gemini');
 });
 
@@ -244,7 +294,6 @@ test('copilot: a model that does not think keeps its unsigned tool calls', () =>
   );
 
   assert.deepEqual(contents[0].parts[0].functionCall, {
-    id: 'call_plain',
     name: 'listDir',
     args: { path: '.' },
   });
@@ -274,11 +323,15 @@ test('copilot: the calls after the first in a parallel batch keep their tool sha
   );
 
   assert.equal(contents[0].parts[0].thoughtSignature, 'signature-for-the-step');
-  assert.equal(contents[0].parts[1].functionCall.id, 'call_p2');
+  // The second call in the batch is the one whose id Copilot invents rather
+  // than receives: Gemini signed only the first. Both go out without ids.
+  assert.equal(contents[0].parts[1].functionCall.name, 'read_file');
+  assert.equal(contents[0].parts[1].functionCall.id, undefined);
   assert.equal(contents[0].parts[1].thoughtSignature, undefined);
-  assert.deepEqual(
-    contents[1].parts.map((part: any) => part.functionResponse?.id),
-    ['call_p1', 'call_p2'],
+  assert.ok(
+    contents[1].parts.every(
+      (part: any) => part.functionResponse.name === 'read_file' && part.functionResponse.id === undefined,
+    ),
   );
 });
 

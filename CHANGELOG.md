@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **A chat that used tools on a Gemini thinking model no longer fails every
+  request after that turn.** Gemini 3 signs only the first call of a parallel
+  tool turn and correlates those signatures by the call id, so replaying the
+  turn sent back ids Copilot Chat had invented for the calls Gemini never
+  signed, and Cloud Code Assist refused the whole request with a bare
+  `HTTP 400: Request contains an invalid argument.` The turn was in the
+  conversation by then, which is why every request after it failed the same way.
+  The id is left off the Gemini wire only, so the conversation stops carrying
+  one Gemini never issued; every other model is sent it exactly as before.
+
 ## 1.3.1
 
 - **Ultracode reaches the model again with Claude Code 2.1.295.** That
