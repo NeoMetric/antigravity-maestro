@@ -41,7 +41,8 @@
     "quota"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onLanguageModelChatProvider:antigravity-maestro"
   ],
   "main": "./dist/extension.js",
   "type": "commonjs",

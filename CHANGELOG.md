@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **The models return to Copilot Chat's picker.** VS Code only starts a
+  language-model-chat-provider extension when it sees
+  `onLanguageModelChatProvider:antigravity-maestro`, and this extension never
+  declared it, so Copilot Chat could not find the models and warned about a
+  missing `antigravity-maestro/gpt-oss-120b-medium`. The event is declared now,
+  so the provider loads on demand like every other BYOK extension.
+
 ## 1.3.1
 
 - **Ultracode reaches the model again with Claude Code 2.1.295.** That
