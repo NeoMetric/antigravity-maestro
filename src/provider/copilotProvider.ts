@@ -660,6 +660,19 @@ export function convertMessages(
   return { systemText: systemChunks.join('\n\n'), contents };
 }
 
+/**
+ * Whether a replayed call carries Copilot's id for it. The Claude models need
+ * it — the upstream answers them as Anthropic `tool_use`/`tool_result` blocks,
+ * which reject a call without one — and the GPT models are sent it as they
+ * always were. Only the Gemini models go without it: on that wire the id is
+ * what Cloud Code Assist correlates thought signatures by, and Copilot's id for
+ * a call Gemini never signed is invented client-side — replaying it is refused
+ * outright.
+ */
+function sendsToolCallIds(model: string): boolean {
+  return signatureFamilyOf(model) !== 'gemini';
+}
+
 function convertPart(
   part: unknown,
   toolNames: Map<string, string>,
@@ -691,9 +704,9 @@ function convertPart(
     }
     return {
       functionCall: {
-        // Required: for the Claude models the upstream turns this back into an
-        // Anthropic `tool_use` block, which rejects the request without an id.
-        id: part.callId,
+        // Withheld from the Gemini models alone, where an id Gemini never
+        // issued is what it refuses to see replayed. See `sendsToolCallIds`.
+        ...(sendsToolCallIds(model) ? { id: part.callId } : {}),
         name: part.name,
         args,
       },
@@ -709,7 +722,15 @@ function convertPart(
     if (unsigned.has(part.callId)) {
       return { text: `[tool result] ${name}: ${output}` };
     }
-    return { functionResponse: { id: part.callId, name, response: { output } } };
+    return {
+      functionResponse: {
+        // The id goes with the call or not at all, on the rule above. Gemini
+        // pairs a result with its call by name and order.
+        ...(sendsToolCallIds(model) ? { id: part.callId } : {}),
+        name,
+        response: { output },
+      },
+    };
   }
 
   if (isImagePart(part)) {

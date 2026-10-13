@@ -4,7 +4,9 @@ export interface FunctionCall {
   /**
    * Client-side call id. The Claude models are served by translating this
    * request into the Anthropic format, and that translation rejects a tool call
-   * with no id, so it has to survive the round trip.
+   * with no id, so they are sent it — as the GPT models are. Only the Gemini
+   * models are sent none: they correlate thought signatures by this id, and
+   * Copilot's id for a call Gemini never signed is invented client-side.
    */
   id?: string;
   name: string;
@@ -12,7 +14,11 @@ export interface FunctionCall {
 }
 
 export interface FunctionResponse {
-  /** Matches the `id` of the call this responds to. */
+  /**
+   * Matches the `id` of the call this responds to. Sent with one wherever the
+   * call carried one; the Gemini models get neither, pairing a result with its
+   * call by name and order.
+   */
   id?: string;
   name: string;
   response: Record<string, unknown>;
