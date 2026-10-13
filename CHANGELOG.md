@@ -11,6 +11,12 @@
   conversation by then, which is why every request after it failed the same way.
   The id is left off the Gemini wire only, so the conversation stops carrying
   one Gemini never issued; every other model is sent it exactly as before.
+- **The models return to Copilot Chat's picker.** VS Code only starts a
+  language-model-chat-provider extension when it sees
+  `onLanguageModelChatProvider:antigravity-maestro`, and this extension never
+  declared it, so Copilot Chat could not find the models and warned about a
+  missing `antigravity-maestro/gpt-oss-120b-medium`. The event is declared now,
+  so the provider loads on demand like every other BYOK extension.
 
 ## 1.3.1
 
