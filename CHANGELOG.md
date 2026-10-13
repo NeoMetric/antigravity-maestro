@@ -1,22 +1,25 @@
 # Changelog
 
-## Unreleased
+## 1.3.2
 
 - **A chat that used tools on a Gemini thinking model no longer fails every
   request after that turn.** Gemini 3 signs only the first call of a parallel
-  tool turn and correlates those signatures by the call id, so replaying the
-  turn sent back ids Copilot Chat had invented for the calls Gemini never
-  signed, and Cloud Code Assist refused the whole request with a bare
-  `HTTP 400: Request contains an invalid argument.` The turn was in the
-  conversation by then, which is why every request after it failed the same way.
-  The id is left off the Gemini wire only, so the conversation stops carrying
-  one Gemini never issued; every other model is sent it exactly as before.
-- **The models return to Copilot Chat's picker.** VS Code only starts a
-  language-model-chat-provider extension when it sees
-  `onLanguageModelChatProvider:antigravity-maestro`, and this extension never
-  declared it, so Copilot Chat could not find the models and warned about a
-  missing `antigravity-maestro/gpt-oss-120b-medium`. The event is declared now,
-  so the provider loads on demand like every other BYOK extension.
+  tool turn and correlates those signatures by the call id. Gemini issues no
+  id for the other calls, so the extension made one up for each, and replaying
+  the turn sent those made-up ids back; Cloud Code Assist refused the whole
+  request with a bare `HTTP 400: Request contains an invalid argument.` The
+  turn was in the conversation by then, which is why every request after it
+  failed the same way. The id is left off the Gemini wire only, so the
+  conversation stops carrying one Gemini never issued; every other model is
+  sent it exactly as before. Thanks to @NeoMetric (#8, #9).
+- **The provider starts as soon as Copilot Chat asks for its models.** The
+  extension now declares `onLanguageModelChatProvider:antigravity-maestro`,
+  so VS Code loads it on demand like every other BYOK extension, instead of
+  waiting for startup to finish or the accounts panel to open. Until then
+  Copilot Chat could not find the models and warned about a missing
+  `antigravity-maestro/gpt-oss-120b-medium`. If the models still do not show
+  in the picker, check that they are switched on under **Manage Models →
+  Antigravity Maestro**. Thanks to @NeoMetric (#10, #11).
 
 ## 1.3.1
 
