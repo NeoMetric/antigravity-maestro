@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.3
+
+- **Claude Code no longer spends Opus quota when another model was picked.**
+  Claude Code sends some of its background calls under a Claude id it
+  chooses itself, whatever model it was wired to. One example is
+  `claude-opus-4-6`, sent with a 1k thinking budget around tool calls.
+  Others use a dated haiku id. The `ANTHROPIC_DEFAULT_*_MODEL` overrides
+  never reach these calls. No account offers those ids exactly, so the
+  gateway resolved them by family to the best Claude model available, and
+  Opus 4.6 answered beside the Gemini model the user had picked, using up
+  its allowance. Claude Code requests for a Claude id that no account
+  serves as-is now go to Claude Code's background model, or to the
+  account's fast model when none was picked. The request log records each
+  of these redirects. A Claude model picked on purpose
+  (`claude-opus-4-6-thinking`) and requests from other clients are served
+  as before.
+
 ## 1.3.2
 
 - **A chat that used tools on a Gemini thinking model no longer fails every
