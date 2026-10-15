@@ -65,6 +65,7 @@ export class GatewayManager implements vscode.Disposable {
       client: this.client,
       catalog: this.catalog,
       apiKey,
+      claudeCodeBackgroundModel: () => Config.claudeCodeSmallFastModel() || undefined,
     });
 
     const preferred = Config.gatewayPort();

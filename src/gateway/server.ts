@@ -68,6 +68,8 @@ export interface GatewayDeps {
   catalog: ModelCatalog;
   /** Bearer key clients must present. */
   apiKey: string;
+  /** The model Claude Code's background work was wired to, if one was picked. */
+  claudeCodeBackgroundModel?: () => string | undefined;
 }
 
 /**
@@ -244,7 +246,8 @@ export class GatewayServer {
     try {
       // Read once: it depends on the conversation, not on the account serving it.
       const ultracode = ultracodeFor(body);
-      await this.deps.lease.run(body.model, async (context) => {
+      const model = this.claudeCodeModel(req, body.model);
+      await this.deps.lease.run(model, async (context) => {
         const request = this.prepareAnthropicRequest(body, context, ultracode);
         Logger.info(
           `Anthropic request: requested=${body.model}, model=${context.model.id}, account=${context.email}, stream=${body.stream === true}, ` +
@@ -278,6 +281,35 @@ export class GatewayServer {
     } catch (error) {
       this.reportFailure(res, error);
     }
+  }
+
+  /**
+   * The model a Claude Code request is served on.
+   *
+   * Claude Code names some of its calls with a Claude id of its own choosing,
+   * whatever its settings say — `claude-opus-4-6` with a 1k thinking budget
+   * for the checks it runs around tool calls, a dated haiku id for others —
+   * and the ANTHROPIC_DEFAULT_*_MODEL overrides never reach them. No account
+   * offers those ids exactly, so the catalog resolved them by family onto the
+   * best Claude model there was: a user who had picked Gemini found Opus 4.6
+   * answering beside it and its allowance spent on background checks.
+   *
+   * Such a call is background work, so it goes where Claude Code's background
+   * work was wired, else to the account's fast model through the haiku alias.
+   * An id some account serves as-is — `claude-opus-4-6-thinking` picked on
+   * purpose — is left alone, as is every other client.
+   */
+  private claudeCodeModel(req: http.IncomingMessage, requested: string): string {
+    const id = requested.trim().toLowerCase();
+    if (!isClaudeCode(req) || !id.startsWith('claude-')) {
+      return requested;
+    }
+    if (this.deps.catalog.listAll().some((model) => model.id.toLowerCase() === id)) {
+      return requested;
+    }
+    const background = this.deps.claudeCodeBackgroundModel?.() || CLAUDE_CODE_BACKGROUND_ALIAS;
+    Logger.info(`Claude Code asked for '${requested}', which no account offers; serving it on '${background}'`);
+    return background;
   }
 
   /**
@@ -743,6 +775,21 @@ function sessionOf(req: http.IncomingMessage, body: unknown): string | undefined
     fields?.metadata?.user_id,
   ].find((value): value is string => typeof value === 'string' && value.trim() !== '');
   return key ? `gateway:${key}` : undefined;
+}
+
+/** Resolved by the catalog to the account's fast model. */
+const CLAUDE_CODE_BACKGROUND_ALIAS = 'claude-haiku-4-5';
+
+/**
+ * True for a request from Claude Code, CLI or VS Code extension alike: both
+ * send `x-app: cli` and a `claude-cli/<version>` user agent.
+ */
+function isClaudeCode(req: http.IncomingMessage): boolean {
+  return (
+    header(req, 'x-app')?.trim().toLowerCase() === 'cli' ||
+    /^claude-cli\//i.test(header(req, 'user-agent')?.trim() ?? '') ||
+    header(req, 'x-claude-code-session-id') !== undefined
+  );
 }
 
 /**

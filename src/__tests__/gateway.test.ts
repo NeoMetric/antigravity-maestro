@@ -22,6 +22,7 @@ const CUT_OFF = [{ candidates: [{ content: { role: 'model', parts: [] } }] }];
 async function gateway(...replies: unknown[][]) {
   const sent: any[] = [];
   const sessions: unknown[] = [];
+  const models: string[] = [];
   const context = {
     accountId: 'account-1',
     email: 'someone@example.com',
@@ -34,14 +35,15 @@ async function gateway(...replies: unknown[][]) {
   };
   const server = new GatewayServer({
     apiKey: 'key',
-    catalog: { listAll: () => [] },
+    catalog: { listAll: () => [{ id: 'claude-opus-4-6-thinking' }, { id: 'gemini-3-flash' }] },
     lease: {
       run: async (
-        _model: string,
+        model: string,
         execute: (context: unknown) => Promise<unknown>,
         _signal: unknown,
         session: unknown,
       ) => {
+        models.push(model);
         sessions.push(session);
         return execute(context);
       },
@@ -68,7 +70,7 @@ async function gateway(...replies: unknown[][]) {
     });
     return { status: response.status, text: await response.text() };
   };
-  return { sent, sessions, post, context, stop: () => server.stop() };
+  return { sent, sessions, models, post, context, stop: () => server.stop() };
 }
 
 const MESSAGES = { model: 'gemini-3-flash', max_tokens: 100, messages: [{ role: 'user', content: 'hi' }] };
@@ -268,6 +270,33 @@ test('gateway: ultracode is restated last for a Claude Code session that can run
     assert.deepEqual(parts[1], parts[0].slice(0, 2));
     assert.deepEqual(parts[2], parts[0].slice(0, 2));
     assert.deepEqual(parts[3], parts[0].slice(0, 2));
+  } finally {
+    await stop();
+  }
+});
+
+test('gateway: a Claude id Claude Code picks on its own does not land on Opus', async () => {
+  // Claude Code sends some background checks as `claude-opus-4-6` whatever
+  // model it was wired to; the catalog used to resolve that by family to Opus.
+  const { models, post, stop } = await gateway(ANSWER, ANSWER, ANSWER, ANSWER, ANSWER);
+  try {
+    const cli = { 'x-app': 'cli', 'user-agent': 'claude-cli/2.1.300 (external, cli)' };
+    await post('/v1/messages', { ...MESSAGES, model: 'claude-opus-4-6' }, cli);
+    await post('/v1/messages', { ...MESSAGES, model: 'claude-haiku-4-5-20251001' }, cli);
+    // Picked on purpose: an id an account serves as-is is left alone.
+    await post('/v1/messages', { ...MESSAGES, model: 'claude-opus-4-6-thinking' }, cli);
+    // The model it was wired to is untouched.
+    await post('/v1/messages', { ...MESSAGES, model: 'gemini-3-flash' }, cli);
+    // Other clients keep what they asked for.
+    await post('/v1/messages', { ...MESSAGES, model: 'claude-opus-4-6' });
+
+    assert.deepEqual(models, [
+      'claude-haiku-4-5',
+      'claude-haiku-4-5',
+      'claude-opus-4-6-thinking',
+      'gemini-3-flash',
+      'claude-opus-4-6',
+    ]);
   } finally {
     await stop();
   }
